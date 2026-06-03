@@ -1,0 +1,25 @@
+{
+  "phone": "+10000000000",
+  "name": "Alex",
+  "email": "alex@example.com",
+  "brand": "planner",
+  "occupation": "marketing manager",
+  "lifestyle": "Alex is a young professional in Chicago balancing a busy career with building better money habits.",
+  "goals": [
+    "save $500/month",
+    "pay off credit card by December",
+    "build a 3-month emergency fund"
+  ],
+  "monthlyIncome": 5200,
+  "budgetLimits": {
+    "food": 500,
+    "restaurants": 300,
+    "entertainment": 200,
+    "transportation": 400,
+    "shopping": 300
+  },
+  "timezone": "America/Chicago",
+  "onboardedAt": "2026-06-01T12:00:00.000Z",
+  "active": true,
+  "tier": "personal"
+}

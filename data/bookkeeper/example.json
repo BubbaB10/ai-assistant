@@ -1,0 +1,56 @@
+{
+  "lastUpdated": "2026-06-01T08:00:00.000Z",
+  "currentMonth": {
+    "income": 5200,
+    "expenses": 3840,
+    "net": 1360,
+    "byCategory": {
+      "food": 280,
+      "restaurants": 340,
+      "entertainment": 95,
+      "transportation": 210,
+      "shopping": 180,
+      "utilities": 145,
+      "rent": 1650,
+      "subscriptions": 87,
+      "other": 853
+    }
+  },
+  "recentTransactions": [
+    {
+      "date": "2026-06-01",
+      "description": "Trader Joe's",
+      "amount": -67.43,
+      "category": "food"
+    },
+    {
+      "date": "2026-05-31",
+      "description": "Maple & Ash",
+      "amount": -128.50,
+      "category": "restaurants"
+    },
+    {
+      "date": "2026-05-30",
+      "description": "Netflix",
+      "amount": -15.99,
+      "category": "subscriptions"
+    },
+    {
+      "date": "2026-05-30",
+      "description": "Ventra CTA",
+      "amount": -50.00,
+      "category": "transportation"
+    },
+    {
+      "date": "2026-05-29",
+      "description": "Amazon",
+      "amount": -43.21,
+      "category": "shopping"
+    }
+  ],
+  "lastMonthSummary": {
+    "income": 5200,
+    "expenses": 4120,
+    "net": 1080
+  }
+}

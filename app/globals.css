@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --charcoal: #111827;
+  --indigo: #6366f1;
+  --indigo-dark: #4f46e5;
+  --indigo-light: #818cf8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: #111827;
+  color: #f9fafb;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
