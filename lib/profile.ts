@@ -43,6 +43,18 @@ export interface UserProfile {
   // Memory integrity metadata
   memoryVersion: number          // increments on every profile save
   lastVerified?: string          // ISO timestamp of last successful read-back
+
+  // Guardian mode (elderly/vulnerable users)
+  guardian?: {
+    enabled: boolean
+    operatorPhone: string         // Bubba's number
+    operatorName: string          // "Bubba and Helen"
+    checkInEnabled: boolean
+    checkInTime: string           // "09:00" local time
+    checkInMessage: string
+    lastCheckInResponse?: string
+    missedCheckIns: number
+  }
 }
 
 // ─── Read ─────────────────────────────────────────────────────────────────────

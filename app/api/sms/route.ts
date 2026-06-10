@@ -8,6 +8,7 @@ import { loadProfile, updateProfile } from '@/lib/profile'
 import { processMessage } from '@/lib/brain'
 import { safeLoadProfile } from '@/lib/integrity'
 import { sendToUser } from '@/lib/channels'
+import { guardianGate } from '@/lib/guardian'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || ''
 const AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || ''
@@ -62,6 +63,17 @@ export async function POST(req: NextRequest) {
 
     // Touch last seen
     await updateProfile(from, { lastSeen: new Date().toISOString() })
+
+    // Guardian gate — scam protection for elderly/protected users
+    const guardianResult = await guardianGate(profile, messageBody, from)
+    if (guardianResult.action === 'block' && guardianResult.reply) {
+      return twiml(guardianResult.reply)
+    }
+    if (guardianResult.action === 'warn' && guardianResult.reply) {
+      // Send warning then also let brain respond
+      const { reply: brainReply } = await processMessage(profile, messageBody)
+      return twiml(guardianResult.reply + ' ' + brainReply)
+    }
 
     const { reply } = await processMessage(profile, messageBody)
     return twiml(reply)
