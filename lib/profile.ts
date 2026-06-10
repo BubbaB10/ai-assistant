@@ -44,6 +44,11 @@ export interface UserProfile {
   memoryVersion: number          // increments on every profile save
   lastVerified?: string          // ISO timestamp of last successful read-back
 
+  // Cognition mode — daily brain touchpoints (used with guardian mode)
+  cognition?: {
+    enabled: boolean
+  }
+
   // Guardian mode (elderly/vulnerable users)
   guardian?: {
     enabled: boolean

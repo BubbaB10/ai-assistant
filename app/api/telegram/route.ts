@@ -11,6 +11,8 @@ import { processMessage } from '@/lib/brain'
 import { safeLoadProfile } from '@/lib/integrity'
 import { updateProfile } from '@/lib/profile'
 import { sendToUser } from '@/lib/channels'
+import { guardianGate } from '@/lib/guardian'
+import { handleCognitionResponse, getCurrentSlot } from '@/lib/cognition'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || ''
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
@@ -63,8 +65,22 @@ export async function POST(req: NextRequest) {
 
     await updateProfile(profile.phone, { lastSeen: new Date().toISOString() })
 
-    const { reply } = await processMessage(profile, text)
-    await sendTelegramMessage(chatId, reply)
+    // Guardian gate
+    const guardianResult = await guardianGate(profile, text, chatId)
+    if (guardianResult.action === 'block' && guardianResult.reply) {
+      await sendTelegramMessage(chatId, guardianResult.reply)
+      return new NextResponse('OK', { status: 200 })
+    }
+
+    // Cognition response detection
+    const slot = getCurrentSlot()
+    await handleCognitionResponse(profile, text, slot)
+
+    const replyText = guardianResult.action === 'warn' && guardianResult.reply
+      ? guardianResult.reply
+      : (await processMessage(profile, text)).reply
+
+    await sendTelegramMessage(chatId, replyText)
 
     return new NextResponse('OK', { status: 200 })
   } catch (err) {

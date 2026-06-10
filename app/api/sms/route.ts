@@ -9,6 +9,7 @@ import { processMessage } from '@/lib/brain'
 import { safeLoadProfile } from '@/lib/integrity'
 import { sendToUser } from '@/lib/channels'
 import { guardianGate } from '@/lib/guardian'
+import { handleCognitionResponse, getCurrentSlot } from '@/lib/cognition'
 
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || ''
 const AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || ''
@@ -74,6 +75,10 @@ export async function POST(req: NextRequest) {
       const { reply: brainReply } = await processMessage(profile, messageBody)
       return twiml(guardianResult.reply + ' ' + brainReply)
     }
+
+    // Cognition response detection — log engagement if responding to a daily prompt
+    const slot = getCurrentSlot()
+    await handleCognitionResponse(profile, messageBody, slot)
 
     const { reply } = await processMessage(profile, messageBody)
     return twiml(reply)
