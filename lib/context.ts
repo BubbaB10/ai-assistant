@@ -1,99 +1,73 @@
 /**
- * Context builder — assembles the right tier 1/2/3 context for each query
+ * Context builder — assembles the right system prompt per query.
+ *
+ * Financial scope: LIGHT only.
+ * - Budget awareness, spending nudges, general money sense
+ * - Heavy financial analysis → upsell to AI Bookkeeper
+ * - Never replace Bookkeeper. Complement it.
  */
 
 import { UserProfile } from './profile'
-import { loadBookkeeperData, formatFinancialSnapshot, formatRecentTransactions, checkBudgetAlerts } from './bookkeeper'
 import { QueryType } from './classify'
 
 export interface AssembledContext {
   systemPrompt: string
-  tier2Data: string | null
   useExpensiveModel: boolean
 }
 
-export function buildSystemPrompt(
-  profile: UserProfile,
-  tier2Data: string | null,
-  budgetAlerts: string[]
-): string {
-  const { name, occupation, lifestyle, goals } = profile
+export function buildSystemPrompt(profile: UserProfile): string {
+  const { name, occupation, lifestyle, goals, channel } = profile
 
   const goalsList = goals.length > 0
     ? goals.map(g => `• ${g}`).join('\n')
-    : '• Not yet set'
+    : '• No goals set yet — ask them what they\'re working toward'
 
-  const alertSection = budgetAlerts.length > 0
-    ? `\nBudget alerts:\n${budgetAlerts.map(a => `⚠️ ${a}`).join('\n')}`
-    : ''
+  // Channel-aware length guidance
+  const lengthRule = channel === 'sms'
+    ? 'Keep replies under 160 chars (one SMS). Never exceed 320.'
+    : channel === 'telegram'
+    ? 'Keep replies concise — 1-3 short paragraphs max. No markdown walls.'
+    : 'Keep replies brief and conversational.'
 
-  const financialSection = tier2Data
-    ? `\nCurrent financial snapshot:\n${tier2Data}${alertSection}`
-    : alertSection
-      ? `\nCurrent financial snapshot:\n(No bookkeeper data on file yet)${alertSection}`
-      : '\nCurrent financial snapshot:\n(No bookkeeper data on file yet — user needs to connect their bank)'
+  return `You are ${name}'s personal AI assistant. You know them well and you're genuinely useful — not a generic chatbot.
 
-  return `You are ${name}'s personal AI assistant. You know them well.
-
-About ${name}: ${lifestyle} They work as ${occupation}.
-
-Goals ${name} is working toward:
+About ${name}: ${lifestyle}
+Occupation: ${occupation}
+Goals:
 ${goalsList}
-${financialSection}
 
-You communicate by SMS. Rules:
-- Keep replies under 160 characters when possible (one SMS). Never exceed 320 characters.
-- Be direct, warm, and specific. Use their actual numbers when available.
-- Never give tax or legal advice. Say "talk to your accountant on that one."
-- If data is missing or stale, say so honestly.
-- Sound like a smart friend, not a corporate bot.
-- Never start a reply with "I" — lead with the answer.
-- No bullet points or markdown — SMS only gets plain text.`
+YOUR ROLE — what you do well:
+- Answer questions, fetch info, help think through decisions
+- Reminders, scheduling nudges, calendar awareness
+- Light financial awareness: spending patterns, budget sense, "you've been eating out a lot this week"
+- Email triage guidance, task automation help
+- General life admin — whatever comes up
+
+FINANCIAL SCOPE — be clear on this:
+- You can discuss spending habits, budget categories, and general money sense
+- You CANNOT do deep bookkeeping, P&L analysis, invoice tracking, or tax prep
+- When someone needs heavy financial help: "For that level of detail you'd want the AI Bookkeeper — it's built for that. Want me to get you set up?"
+- Don't pretend to be something you're not. If it's out of scope, say so and point them toward the right tool.
+
+COMMUNICATION RULES:
+- ${lengthRule}
+- Be direct, warm, specific — sound like a smart friend
+- Never give legal or tax advice. "Talk to your accountant on that one."
+- Lead with the answer, not "I think" or "I would suggest"
+- No bullet points or markdown in SMS replies — plain text only
+- Telegram replies can use light formatting if it helps clarity
+- If you don't know something, say so. Don't fabricate.
+- Never start a reply with "I"`
 }
 
 export async function assembleContext(
   profile: UserProfile,
   queryType: QueryType
 ): Promise<AssembledContext> {
-  let tier2Data: string | null = null
-  let budgetAlerts: string[] = []
-  let useExpensiveModel = false
+  const systemPrompt = buildSystemPrompt(profile)
 
-  // Load bookkeeper data for financial/budget queries
-  if (['financial', 'budget', 'goal'].includes(queryType)) {
-    const bkData = loadBookkeeperData(profile.phone)
-    if (bkData) {
-      if (queryType === 'financial') {
-        tier2Data = formatFinancialSnapshot(bkData) + '\n\nRecent transactions:\n' + formatRecentTransactions(bkData)
-      } else if (queryType === 'budget') {
-        tier2Data = formatFinancialSnapshot(bkData)
-        budgetAlerts = checkBudgetAlerts(bkData, profile.budgetLimits)
-      } else if (queryType === 'goal') {
-        tier2Data = formatFinancialSnapshot(bkData)
-      }
-    }
-    useExpensiveModel = true // financial queries need GPT-4o
-  }
+  // Use expensive model for advice, planning, anything requiring judgment
+  const useExpensiveModel = ['financial', 'budget', 'goal', 'advice', 'task'].includes(queryType)
 
-  // Always check budget alerts for financial queries
-  if (queryType === 'financial' || queryType === 'budget') {
-    const bkData = loadBookkeeperData(profile.phone)
-    if (bkData && budgetAlerts.length === 0) {
-      budgetAlerts = checkBudgetAlerts(bkData, profile.budgetLimits)
-    }
-  }
-
-  // Advice queries use expensive model for quality
-  if (queryType === 'advice') {
-    useExpensiveModel = true
-  }
-
-  // Greetings/unknown use cheap model
-  if (queryType === 'greeting' || queryType === 'unknown') {
-    useExpensiveModel = false
-  }
-
-  const systemPrompt = buildSystemPrompt(profile, tier2Data, budgetAlerts)
-
-  return { systemPrompt, tier2Data, useExpensiveModel }
+  return { systemPrompt, useExpensiveModel }
 }

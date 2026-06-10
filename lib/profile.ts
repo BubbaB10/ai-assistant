@@ -1,16 +1,18 @@
 /**
- * User profile loader/writer
- * Profiles stored at: data/users/+1XXXXXXXXXX.json
+ * User profile — stored in Redis, not on disk.
+ * Disk storage = wiped on every Vercel deploy. Redis = persists forever.
+ *
+ * MEMORY INTEGRITY RULE:
+ * Every write is verified (read-back check). If verification fails, the caller
+ * receives { ok: false } and must alert the operator — never silently proceed.
  */
 
-import fs from 'fs'
-import path from 'path'
+import { redisGetProfile, redisSetProfile, redisProfileExists, redisListProfiles, isRedisConfigured } from './redis'
 
 export interface BudgetLimits {
   food: number
   restaurants: number
   entertainment: number
-  transportation: number
   shopping: number
   [key: string]: number
 }
@@ -19,83 +21,127 @@ export interface UserProfile {
   phone: string
   name: string
   email: string
-  brand: 'planner' | 'admin'
+  channel: 'sms' | 'telegram' | 'whatsapp'
+  telegramChatId?: string        // set when channel=telegram
+  brand: 'assistant'
   occupation: string
-  lifestyle: string
+  lifestyle: string              // free-form context paragraph about this person
   goals: string[]
-  monthlyIncome: number
-  budgetLimits: BudgetLimits
   timezone: string
   onboardedAt: string
+  lastSeen: string
   active: boolean
   tier: 'personal' | 'bundle'
+  // Light financial context (not Bookkeeper — just awareness)
+  monthlyIncome?: number
+  spendingAwareness?: {
+    trackCategories: string[]    // e.g. ['dining', 'entertainment']
+    alertThreshold?: number      // alert when a category looks high
+  }
+  // Operator alert channel — where to page Bubba if something breaks
+  operatorAlertPhone?: string
+  // Memory integrity metadata
+  memoryVersion: number          // increments on every profile save
+  lastVerified?: string          // ISO timestamp of last successful read-back
 }
 
-const DATA_DIR = path.join(process.cwd(), 'data', 'users')
+// ─── Read ─────────────────────────────────────────────────────────────────────
 
-function phoneToFilename(phone: string): string {
-  // Normalize phone: strip spaces/dashes, ensure starts with +
-  const normalized = phone.replace(/[\s\-\(\)]/g, '')
-  return `${normalized}.json`
-}
-
-export function loadProfile(phone: string): UserProfile | null {
-  try {
-    const filePath = path.join(DATA_DIR, phoneToFilename(phone))
-    if (!fs.existsSync(filePath)) return null
-    const raw = fs.readFileSync(filePath, 'utf-8')
-    return JSON.parse(raw) as UserProfile
-  } catch {
+export async function loadProfile(phone: string): Promise<UserProfile | null> {
+  if (!isRedisConfigured) {
+    console.error('[profile] Redis not configured — cannot load profile for', phone)
     return null
   }
+  return redisGetProfile<UserProfile>(phone)
 }
 
-export function saveProfile(profile: UserProfile): void {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true })
+export async function profileExists(phone: string): Promise<boolean> {
+  if (!isRedisConfigured) return false
+  return redisProfileExists(phone)
+}
+
+export async function listAllProfiles(): Promise<string[]> {
+  return redisListProfiles()
+}
+
+// ─── Write (with integrity verification) ────────────────────────────────────
+
+export interface SaveResult {
+  ok: boolean
+  verified: boolean
+  error?: string
+}
+
+export async function saveProfile(profile: UserProfile): Promise<SaveResult> {
+  if (!isRedisConfigured) {
+    return { ok: false, verified: false, error: 'Redis not configured' }
   }
-  const filePath = path.join(DATA_DIR, phoneToFilename(profile.phone))
-  fs.writeFileSync(filePath, JSON.stringify(profile, null, 2), 'utf-8')
+
+  const updated = {
+    ...profile,
+    memoryVersion: (profile.memoryVersion ?? 0) + 1,
+    lastVerified: new Date().toISOString(),
+  }
+
+  const result = await redisSetProfile(profile.phone, updated)
+
+  if (!result.ok) {
+    return { ok: false, verified: false, error: 'Redis write failed' }
+  }
+
+  if (!result.verified) {
+    return { ok: true, verified: false, error: 'Write succeeded but read-back mismatch — data may be corrupt' }
+  }
+
+  return { ok: true, verified: true }
 }
 
-export function createProfile(
+// ─── Create ───────────────────────────────────────────────────────────────────
+
+export async function createProfile(
   phone: string,
   name: string,
-  email: string
-): UserProfile {
+  email: string,
+  channel: UserProfile['channel'] = 'sms',
+  telegramChatId?: string
+): Promise<{ profile: UserProfile; saved: SaveResult }> {
   const profile: UserProfile = {
     phone,
     name,
     email,
-    brand: 'planner',
+    channel,
+    telegramChatId,
+    brand: 'assistant',
     occupation: 'professional',
-    lifestyle: `${name} is building a better financial future.`,
+    lifestyle: `${name} is getting started with their AI assistant.`,
     goals: [],
-    monthlyIncome: 0,
-    budgetLimits: {
-      food: 500,
-      restaurants: 300,
-      entertainment: 200,
-      transportation: 400,
-      shopping: 300,
-    },
     timezone: 'America/Chicago',
     onboardedAt: new Date().toISOString(),
+    lastSeen: new Date().toISOString(),
     active: true,
     tier: 'personal',
+    memoryVersion: 0,
   }
-  saveProfile(profile)
-  return profile
+
+  const saved = await saveProfile(profile)
+  return { profile, saved }
 }
 
-export function updateProfileGoals(phone: string, goals: string[]): void {
-  const profile = loadProfile(phone)
-  if (!profile) return
-  profile.goals = goals
-  saveProfile(profile)
+// ─── Update helpers ───────────────────────────────────────────────────────────
+
+export async function updateProfile(
+  phone: string,
+  updates: Partial<UserProfile>
+): Promise<SaveResult> {
+  const existing = await loadProfile(phone)
+  if (!existing) return { ok: false, verified: false, error: 'Profile not found' }
+  const merged = { ...existing, ...updates }
+  return saveProfile(merged)
 }
 
-export function profileExists(phone: string): boolean {
-  const filePath = path.join(DATA_DIR, phoneToFilename(phone))
-  return fs.existsSync(filePath)
+export async function touchLastSeen(phone: string): Promise<void> {
+  const existing = await loadProfile(phone)
+  if (!existing) return
+  // Don't increment memoryVersion for lastSeen touches — it's noise
+  await redisSetProfile(phone, { ...existing, lastSeen: new Date().toISOString() })
 }
